@@ -1,3 +1,5 @@
+"use client"
+
 import React, { useState, useEffect, useContext } from "react"
 import { useNavigate } from "react-router-dom"
 import {
@@ -72,7 +74,7 @@ const NewTrainingRequest = () => {
     techStacks: [],
     selectedTechStack: "",
     primarySkills: [],
-    selectedPrimarySkill: [],
+    selectedPrimarySkill: "",
     projects: [],
     selectedProject: "",
     employeeLevels: [],
@@ -94,6 +96,17 @@ const NewTrainingRequest = () => {
   const [snackbarMessage, setSnackbarMessage] = useState("")
   const [snackbarSeverity, setSnackbarSeverity] = useState("success")
   const [isFormValid, setIsFormValid] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    // Set default training purpose to "project" for roles other than 8 and 4
+    if (user && user.role_id !== 8 && user.role_id !== 4) {
+      setFormData((prevState) => ({
+        ...prevState,
+        trainingPurpose: "project",
+      }))
+    }
+  }, [user])
 
   const validateForm = () => {
     const requiredFields = [
@@ -117,9 +130,9 @@ const NewTrainingRequest = () => {
     }
 
     if (formData.employeeDetails === "add") {
-      // requiredFields.push(...formData.employees.map(emp => emp.id));
       // Check if all table fields are filled
       const allTableFieldsFilled = formData.employees.every((emp) => emp.availableFrom && emp.bandwidth && emp.weekend)
+
       if (!allTableFieldsFilled) {
         return false
       }
@@ -133,16 +146,12 @@ const NewTrainingRequest = () => {
 
     return requiredFields.every((field) => field !== "" && field !== null)
   }
-
-
-  const ExpandedSection = styled(Box)(({ theme }) => ({
-    padding: "0 220px 16px 20px",
-  }))
-
-  const StatusText = styled(Typography)(({ theme }) => ({
-    color: "#B33A3A",
-    fontWeight: 500,
-  }))
+  useEffect(() => {
+    const isEmployeeDetailsValid =
+      formData.employees.length > 0 &&
+      formData.employees.every((emp) => emp.availableFrom && emp.bandwidth && emp.weekend)
+    setIsFormValid(validateForm() && isEmployeeDetailsValid)
+  }, [formData, formData.employees, formData.otherSkill, formData.completionCriteria, validateForm])
 
   const [expandedEmpId, setExpandedEmpId] = useState(null)
 
@@ -308,19 +317,12 @@ const NewTrainingRequest = () => {
   const handleOtherSkillChange = (value) => {
     const sanitizedValue = value === "<p><br></p>" ? "" : value
 
-    const wordCount = sanitizedValue.split(/\s+/).filter((word) => word.length > 0).length
-    if (wordCount <= 1000) {
-      setFormData((prevData) => ({
-        ...prevData,
-        otherSkill: value,
-      }))
-    } else {
-      alert("Maximum word limit of 1000 words exceeded")
-    }
-    setFormData({ ...formData, otherSkill: sanitizedValue })
+    setFormData((prevData) => ({
+      ...prevData,
+      otherSkill: sanitizedValue,
+    }))
     setIsFormValid(validateForm())
   }
-
   const handleCompletionCriteriaChange = (value) => {
     const sanitizedValue = value === "<p><br></p>" ? "" : value
     const wordCount = sanitizedValue.split(/\s+/).filter((word) => word.length > 0).length
@@ -407,11 +409,11 @@ const NewTrainingRequest = () => {
 
   const handleEmployeeSearch = (event, value) => {
     if (value.length > 0) {
-      let apiUrl;
+      let apiUrl
       if (formData.employeeDetails === "add" && formData.requestonbehalfRole !== 4) {
-        apiUrl = `http://localhost:8000/api/employeeSearchByName/searchEmployeesByName?managerId=${formData.requestonbehalf}&name=${value}`;
+        apiUrl = `http://localhost:8000/api/employeeSearchByName/searchEmployeesByName?managerId=${formData.requestonbehalf}&name=${value}`
       } else {
-        apiUrl = `http://localhost:8000/api/employees/searchWithoutManager?name=${value}`;
+        apiUrl = `http://localhost:8000/api/employees/searchWithoutManager?name=${value}`
       }
 
       fetch(apiUrl)
@@ -421,44 +423,49 @@ const NewTrainingRequest = () => {
             const employeesWithSkills = await Promise.all(
               data.map(async (emp) => {
                 try {
-                  let learnerResponse;
-                  let learnerData;
+                  let learnerResponse
+                  let learnerData
 
-                  const endpoint = 
-                    formData.employeeDetails === "open"
-                      ? `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${emp.emp_id}`
-                      : `http://localhost:8000/api/learners/getLearners/${emp.emp_id}`;
-
-                  learnerResponse = await fetch(endpoint);
-                  learnerData = await learnerResponse.json();
-
-                  return {
-                    ...emp,
-                    totalPrimarySkills: formData.employeeDetails === "open" 
-                      ? learnerData.total_requests || 0
-                      : learnerData.total_primary_skills || 0,
-                  };
+                  if (formData.employeeDetails === "open") {
+                    learnerResponse = await fetch(
+                      `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${emp.emp_id}`,
+                    )
+                    learnerData = await learnerResponse.json()
+                    return {
+                      ...emp,
+                      totalPrimarySkills: learnerData.total_requests || 0,
+                    }
+                  } else {
+                    learnerResponse = await fetch(`http://localhost:8000/api/learners/getLearners/${emp.emp_id}`)
+                    learnerData = await learnerResponse.json()
+                    return {
+                      ...emp,
+                      totalPrimarySkills: learnerData.total_primary_skills || 0,
+                    }
+                  }
                 } catch (error) {
-                  console.error("Error fetching learner data:", error);
-                  return { ...emp, totalPrimarySkills: 0 };
+                  console.error("Error fetching learner data:", error)
+                  return { ...emp, totalPrimarySkills: 0 }
                 }
-              })
-            );
+              }),
+            )
             setSearchResults(
               employeesWithSkills.map((emp) => ({
                 id: emp.emp_id,
                 name: emp.emp_name,
                 email: emp.emp_email,
-                profileImage: `data:image/jpeg;base64,${arrayBufferToBase64(emp.profile_image.data)}`,
+                profileImage: emp.profile_image?.data
+                  ? `data:image/jpeg;base64,${arrayBufferToBase64(emp.profile_image.data)}`
+                  : "/placeholder.svg", // Use a placeholder image if profile_image is null
                 uniqueKey: `${emp.emp_id}-${Date.now()}`,
                 totalPrimarySkills: emp.totalPrimarySkills,
-              }))
-            );
+              })),
+            )
           }
         })
-        .catch((error) => console.error("Error fetching employees:", error));
+        .catch((error) => console.error("Error fetching employees:", error))
     }
-  };
+  }
 
   const handleManagerSearch = (event, value) => {
     if (value.length > 0) {
@@ -480,6 +487,8 @@ const NewTrainingRequest = () => {
           }
         })
         .catch((error) => console.error("Error fetching managers by name:", error))
+    } else {
+      setSearchResults([])
     }
   }
 
@@ -499,7 +508,43 @@ const NewTrainingRequest = () => {
 
       if (response.ok && data.length > 0) {
         const employee = data[0]
+
+        // Check if employee already exists in the list
         if (!formData.employees.some((existingEmp) => existingEmp.id === employee.emp_id)) {
+          // Fetch learning data to check how many learnings the employee has
+          let learnerResponse
+          let learnerData
+
+          if (formData.employeeDetails === "open") {
+            learnerResponse = await fetch(
+              `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${employee.emp_id}`,
+            )
+            learnerData = await learnerResponse.json()
+
+            // For org level, check if employee has more than 2 learnings
+            if (learnerData.total_requests > 2) {
+              setSnackbarMessage(
+                `Failed to add employee ${employee.emp_name} because they already have three learnings.`,
+              )
+              setSnackbarSeverity("error")
+              setSnackbarOpen(true)
+              return null
+            }
+          } else {
+            learnerResponse = await fetch(`http://localhost:8000/api/learners/getLearners/${employee.emp_id}`)
+            learnerData = await learnerResponse.json()
+
+            // For regular add, check if employee has 3 or more learnings
+            if (learnerData.total_primary_skills >= 3) {
+              setSnackbarMessage(
+                `Failed to add employee ${employee.emp_name} because they already have three learnings.`,
+              )
+              setSnackbarSeverity("error")
+              setSnackbarOpen(true)
+              return null
+            }
+          }
+
           return {
             id: employee.emp_id,
             name: employee.emp_name,
@@ -507,8 +552,12 @@ const NewTrainingRequest = () => {
             availableFrom: "",
             bandwidth: "",
             weekend: "",
-            profileImage: `data:image/jpeg;base64,${arrayBufferToBase64(employee.profile_image.data)}`, // Convert image data to base64
-            uniqueKey: `${employee.emp_id}-${Date.now()}`, // Add unique key
+            profileImage: employee.profile_image?.data
+              ? `data:image/jpeg;base64,${arrayBufferToBase64(employee.profile_image.data)}`
+              : "/placeholder.svg",
+            uniqueKey: `${employee.emp_id}-${Date.now()}`,
+            total_requests: learnerData.total_requests || learnerData.total_primary_skills || 0,
+            requests: learnerData.requests || [],
           }
         }
       } else {
@@ -525,56 +574,47 @@ const NewTrainingRequest = () => {
     }
     return null
   }
-  const addEmployeesByLevel = async () => {
-    const newEmployees = [];
 
+  const addEmployeesByLevel = async () => {
+    const newEmployees = []
+
+    // Fetch employees based on selected employee levels if "Place an Open Request" is selected
     if (formData.selectedEmployeeLevel.length > 0) {
-      const levelIds = formData.selectedEmployeeLevel.join(",");
+      const levelIds = formData.selectedEmployeeLevel.join(",")
       try {
         const response = await fetch(
-          `http://localhost:8000/api/employeeDesignation/getEmployeesByDesignation?designationIds=${levelIds}`
-        );
-        const data = await response.json();
-
+          `http://localhost:8000/api/employeeDesignation/getEmployeesByDesignation?designationIds=${levelIds}`,
+        )
+        const data = await response.json()
         if (response.ok) {
-          const fetchedEmployees = await Promise.all(
-            data.map(async (emp) => {
-              try {
-                const endpoint =
-                  formData.employeeDetails === "open"
-                    ? `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${emp.emp_id}`
-                    : `http://localhost:8000/api/learners/getLearners/${emp.emp_id}`;
+          const fetchedEmployees = data.map((emp) => ({
+            id: emp.emp_id,
+            name: emp.emp_name,
+            email: emp.emp_email,
+            availableFrom: "",
+            bandwidth: "",
+            weekend: "",
+            profileImage: `data:image/jpeg;base64,${arrayBufferToBase64(emp.profile_image.data)}`, // Convert image data to base64
+            uniqueKey: `${emp.emp_id}-${Date.now()}`, // Add unique key
+          }))
 
-                const response = await fetch(endpoint);
-                const learnerData = await response.json();
-
-                return {
-                  ...emp,
-                  availableFrom: "",
-                  bandwidth: "",
-                  weekend: "",
-                  total_requests: formData.employeeDetails === "open"
-                    ? learnerData.total_requests || 0
-                    : learnerData.total_primary_skills || 0,
-                  requests: learnerData.requests || [],
-                  profileImage: `data:image/jpeg;base64,${arrayBufferToBase64(emp.profile_image.data)}`,
-                  uniqueKey: `${emp.emp_id}-${Date.now()}`,
-                };
-              } catch (error) {
-                console.error("Error fetching learner data:", error);
-                return { ...emp, total_requests: 0 };
-              }
-            })
-          );
-
+          // Filter out employees that are already in the list
           const uniqueEmployees = fetchedEmployees.filter(
-            (emp) => !formData.employees.some((existingEmp) => existingEmp.id === emp.emp_id)
-          );
+            (emp) => !formData.employees.some((existingEmp) => existingEmp.id === emp.id),
+          )
 
-          newEmployees.push(...uniqueEmployees);
+          newEmployees.push(...uniqueEmployees)
+        } else {
+          console.error("Failed to fetch employees by designation:", data.message)
+          setSnackbarMessage(`Failed to fetch employees: ${data.message}`)
+          setSnackbarSeverity("error")
+          setSnackbarOpen(true)
         }
       } catch (error) {
-        console.error("Error fetching employees by designation:", error);
+        console.error("Error fetching employees by designation:", error)
+        setSnackbarMessage(`Error fetching employees: ${error.message}`)
+        setSnackbarSeverity("error")
+        setSnackbarOpen(true)
       }
     }
 
@@ -583,91 +623,71 @@ const NewTrainingRequest = () => {
       employees: [...prevFormData.employees, ...newEmployees],
       showTable: true,
       showSummary: true,
-    }));
-    setIsFormValid(validateForm());
-  };
-
-  
+    }))
+    setIsFormValid(validateForm())
+  }
 
   const addEmployee = async () => {
-    const newEmployees = [];
-    const invalidEmails = [];
+    const newEmployees = []
+    const invalidEmails = []
+    const tooManyLearningsEmails = []
 
-    // Add selected employee
+    // Add selected employee from "Select Employee" field
     if (selectedEmployee && !formData.employees.some((emp) => emp.id === selectedEmployee.id)) {
       try {
-        const endpoint =
-          formData.employeeDetails === "open"
-            ? `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${selectedEmployee.id}`
-            : `http://localhost:8000/api/learners/getLearners/${selectedEmployee.id}`;
-
-        const response = await fetch(endpoint);
-        const data = await response.json();
+        const response = await fetch(`http://localhost:8000/api/learners/getLearners/${selectedEmployee.id}`)
+        const data = await response.json()
 
         newEmployees.push({
           ...selectedEmployee,
           availableFrom: "",
           bandwidth: "",
           weekend: "",
-          total_requests: formData.employeeDetails === "open" 
-            ? data.total_requests || 0
-            : data.total_primary_skills || 0,
+          total_requests: data.total_requests || 0,
           requests: data.requests || [],
-        });
+        })
       } catch (error) {
-        console.error("Error fetching employee requests:", error);
-        newEmployees.push(selectedEmployee);
+        console.error("Error fetching employee requests:", error)
+        newEmployees.push(selectedEmployee)
       }
-      setSelectedEmployee(null);
+      setSelectedEmployee(null)
     }
 
-    // Process emails
+    // Process comma-separated emails
     if (formData.emails.trim() !== "") {
-      const emailList = formData.emails.split(",").map((email) => email.trim());
-      const uniqueEmails = [...new Set(emailList)];
+      const emailList = formData.emails.split(",").map((email) => email.trim())
+      const uniqueEmails = [...new Set(emailList)] // Remove duplicate emails
 
       for (const email of uniqueEmails) {
-        const employee = await handleEmailSearch(email);
+        const employee = await handleEmailSearch(email)
         if (employee) {
-          try {
-            const endpoint =
-              formData.employeeDetails === "open"
-                ? `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${employee.id}`
-                : `http://localhost:8000/api/learners/getLearners/${employee.id}`;
-
-            const response = await fetch(endpoint);
-            const data = await response.json();
-
-            newEmployees.push({
-              ...employee,
-              availableFrom: "",
-              bandwidth: "",
-              weekend: "",
-              total_requests: formData.employeeDetails === "open" 
-                ? data.total_requests || 0
-                : data.total_primary_skills || 0,
-              requests: data.requests || [],
-            });
-          } catch (error) {
-            console.error("Error fetching employee requests:", error);
-            newEmployees.push(employee);
-          }
+          newEmployees.push(employee)
         } else {
-          invalidEmails.push(email);
+          // Check if it's an invalid email or an employee with too many learnings
+          // This is a simplified check - the actual error message would come from handleEmailSearch
+          invalidEmails.push(email)
         }
+      }
+
+      if (invalidEmails.length > 0) {
+        setSnackbarMessage(`Invalid emails: ${invalidEmails.join(", ")}`)
+        setSnackbarSeverity("error")
+        setSnackbarOpen(true)
       }
     }
 
     setFormData((prev) => ({
       ...prev,
       employees: [...prev.employees, ...newEmployees],
-      showTable: newEmployees.length > 0,
+      showTable: newEmployees.length > 0 || prev.employees.length > 0,
       showSummary: true,
       emails: "",
-    }));
-    setIsFormValid(validateForm());
-  };
+    }))
 
+    setTimeout(() => {
+      setIsFormValid(validateForm())
+    }, 0)
+  }
 
   const removeEmployee = (id) => {
     setFormData({
@@ -701,7 +721,7 @@ const NewTrainingRequest = () => {
   const submitPrimarySkills = async (requestId, primarySkillIds) => {
     const requestBody = {
       requestid: requestId,
-      primary_skill_ids: primarySkillIds,
+      primary_skill_ids: Array.isArray(primarySkillIds) ? primarySkillIds : [primarySkillIds],
     }
 
     console.log("Submitting primary skills to API:", requestBody) // Log the request body
@@ -937,10 +957,10 @@ const NewTrainingRequest = () => {
             }}
           />
           <Typography className="subheader" style={{ whiteSpace: "nowrap", marginTop: "1rem", color: "#4F4949" }}>
-            Request ID/No:
+            Request ID:
           </Typography>
           <Typography style={{ marginLeft: "-0.85rem", marginTop: "1rem" }}>
-            <strong> #{newRequestId !== null ? newRequestId : "Loading..."} </strong>
+            <strong> LR{newRequestId !== null ? newRequestId : "Loading..."} </strong>
           </Typography>
           <Typography
             className="subheader"
@@ -970,10 +990,11 @@ const NewTrainingRequest = () => {
             minWidth: "100%",
             marginLeft: "-42px",
             boxShadow: "none",
+            marginBottom: "50px",
           }}
         >
-          <Typography className="simpleHeading" style={{ fontWeight: "600", marginBottom: "1rem" }}>
-            Learning Details
+          <Typography className="simpleHeading" style={{ fontWeight: "600", marginBottom: "1rem", marginTop: "1rem" }}>
+            Learning Request Details
           </Typography>
 
           <Grid container spacing={5}>
@@ -1061,7 +1082,7 @@ const NewTrainingRequest = () => {
                     color: "#4F4949",
                   }}
                 >
-                  Source <span className="required">*</span>
+                  Designation <span className="required">*</span>
                 </Typography>
                 <Select
                   variant="outlined"
@@ -1092,7 +1113,7 @@ const NewTrainingRequest = () => {
                         fontFamily: "Poppins",
                       }}
                     >
-                      Select Source
+                      Select Designation
                     </em>
                   </MenuItem>
                   {formData.sources.map((source) => (
@@ -1160,12 +1181,22 @@ const NewTrainingRequest = () => {
 
           <Typography
             className="simpleHeading"
-            style={{ fontWeight: "600", marginBottom: "0.2rem", paddingTop: "15px" }}
+            style={{ fontWeight: "600", marginBottom: "0.2rem", paddingTop: "2rem" }}
           >
-            Learning Purpose
+            Skilling For
           </Typography>
           <FormControl component="fieldset" style={{ marginBottom: "0.5rem" }}>
-            <RadioGroup row name="trainingPurpose" value={formData.trainingPurpose} onChange={handleChange}>
+            <RadioGroup
+              row
+              name="trainingPurpose"
+              value={formData.trainingPurpose}
+              onChange={(e) => {
+                // Only allow changes if role_id is 8 or 4
+                if (user.role_id === 8 || user.role_id === 4) {
+                  handleChange(e)
+                }
+              }}
+            >
               <FormControlLabel
                 value="prospect"
                 control={<CustomRadio sx={{ "& .MuiSvgIcon-root": { color: "#707070" } }} />}
@@ -1174,6 +1205,7 @@ const NewTrainingRequest = () => {
                     Prospect
                   </Typography>
                 }
+                disabled={user.role_id !== 8 && user.role_id !== 4}
               />
               <FormControlLabel
                 value="project"
@@ -1181,9 +1213,10 @@ const NewTrainingRequest = () => {
                 control={<CustomRadio sx={{ "& .MuiSvgIcon-root": { color: "#707070" } }} />}
                 label={
                   <Typography className="project" style={{ fontWeight: "600" }}>
-                    Project
+                    Existing Project
                   </Typography>
                 }
+                disabled={user.role_id !== 8 && user.role_id !== 4}
               />
             </RadioGroup>
           </FormControl>
@@ -1193,53 +1226,8 @@ const NewTrainingRequest = () => {
                 <FormControl
                   fullWidth
                   style={{
-                    // flexBasis: "30%",
-                    // minWidth: "250px",
                     display: "flex",
-                    marginLeft: "0", // Remove unnecessary left margin
-                    marginRight: "0.6rem",
-                  }}
-                >
-                  <Typography
-                    className="subheader"
-                    style={{
-                      display: "inline",
-                      marginBottom: "0.5rem",
-                      color: "#4F4949",
-                    }}
-                  >
-                    Prospect Name <span className="required">*</span>
-                  </Typography>
-                  <Tooltip
-                    title={formData.prospectNameErrorMessage}
-                    open={formData.prospectNameError}
-                    placement="bottom-end"
-                    arrow
-                  >
-                    <TextField
-                      variant="outlined"
-                      placeholder="Enter Prospect"
-                      name="prospectName"
-                      value={formData.prospectName}
-                      onChange={handleChange}
-                      error={formData.prospectNameError}
-                      InputProps={{
-                        style: { fontSize: "12px" },
-                      }}
-                    />
-                  </Tooltip>
-                </FormControl>
-              </Grid>
-
-              <Grid size={4}>
-                <FormControl
-                  fullWidth
-                  style={{
-                    // flexBasis: "30%",
-                    // minWidth: "250px",
-                    display: "flex",
-                    // marginLeft: "20px", // Remove unnecessary left margin
-                    marginRight: "0.3rem", // Add right margin to separate form controls
+                    marginRight: "0.3rem",
                   }}
                 >
                   <Typography
@@ -1285,130 +1273,148 @@ const NewTrainingRequest = () => {
                   </Select>
                 </FormControl>
               </Grid>
-            </Grid>
-          ) : (
-            <Box display="flex" flexDirection="row" marginBottom="1rem" gap={2} flexWrap="wrap">
-              <FormControl
-                fullWidth
-                className="formControl"
-                style={{
-                  flexBasis: "30%",
-                  minWidth: "250px",
-                  display: "flex",
-                  marginLeft: "0", // Remove unnecessary left margin
-                  marginRight: "0.6rem",
-                }}
-              >
-                <Typography
-                  className="subheader"
+
+              <Grid size={4}>
+                <FormControl
+                  fullWidth
                   style={{
-                    display: "inline",
-                    marginBottom: "0.5rem",
-                    color: "#4F4949",
+                    display: "flex",
+                    marginLeft: "0",
+                    marginRight: "0.6rem",
                   }}
                 >
-                  Project Name <span className="required">*</span>
-                </Typography>
-                <Select
-                  variant="outlined"
-                  name="prospectName"
-                  value={formData.selectedProject}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      selectedProject: e.target.value === formData.selectedProject ? "" : e.target.value,
-                    })
-                  }
-                  displayEmpty
-                  style={{ height: "30px", fontSize: "12px" }}
-                >
-                  <MenuItem
-                    disabled
-                    value=""
+                  <Typography
+                    className="subheader"
                     style={{
-                      fontSize: "12px",
-                      padding: "4px 4px 4px 6px",
-                      fontFamily: "Poppins",
+                      display: "inline",
+                      marginBottom: "0.5rem",
+                      color: "#4F4949",
                     }}
                   >
-                    <em
+                    Prospect Name <span className="required">*</span>
+                  </Typography>
+                  <Tooltip
+                    title={formData.prospectNameErrorMessage}
+                    open={formData.prospectNameError}
+                    placement="bottom-end"
+                    arrow
+                  >
+                    <TextField
+                      variant="outlined"
+                      placeholder="Enter Prospect"
+                      name="prospectName"
+                      value={formData.prospectName}
+                      onChange={handleChange}
+                      error={formData.prospectNameError}
+                      InputProps={{
+                        style: { fontSize: "12px" },
+                      }}
+                    />
+                  </Tooltip>
+                </FormControl>
+              </Grid>
+            </Grid>
+          ) : (
+            <Grid container spacing={5}>
+              <Grid item size={4}>
+                <FormControl fullWidth className="formControl" style={{ display: "flex", marginRight: "0.3rem" }}>
+                  <Typography
+                    className="subheader"
+                    style={{ display: "inline", marginBottom: "0.5rem", color: "#4F4949" }}
+                  >
+                    Service Division <span className="required">*</span>
+                  </Typography>
+                  <Select
+                    variant="outlined"
+                    defaultValue=""
+                    name="selectedServiceDivision"
+                    value={formData.selectedServiceDivision}
+                    onChange={handleChange}
+                    displayEmpty
+                    style={{ height: "30px", fontSize: "12px", minWidth: "100%" }}
+                  >
+                    <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
+                      <em
+                        style={{
+                          height: "30px",
+                          opacity: "0.75",
+                          fontStyle: "normal",
+                          width: "274px",
+                          fontFamily: "Poppins",
+                        }}
+                      >
+                        Select Service Division
+                      </em>
+                    </MenuItem>
+                    {formData.services.map((service) => (
+                      <MenuItem
+                        key={service.id}
+                        value={service.id}
+                        style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
+                      >
+                        {service.service_name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item size={4}>
+                <FormControl fullWidth className="formControl" style={{ display: "flex", marginRight: "0.6rem" }}>
+                  <Typography
+                    className="subheader"
+                    style={{ display: "inline", marginBottom: "0.5rem", color: "#4F4949" }}
+                  >
+                    Project Name <span className="required">*</span>
+                  </Typography>
+                  <Select
+                    variant="outlined"
+                    name="prospectName"
+                    value={formData.selectedProject}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        selectedProject: e.target.value === formData.selectedProject ? "" : e.target.value,
+                      })
+                    }
+                    displayEmpty
+                    style={{ height: "30px", fontSize: "12px", minWidth: "100%" }}
+                  >
+                    <MenuItem
+                      disabled
+                      value=""
                       style={{
-                        height: "30px",
-                        opacity: "0.75",
-                        fontStyle: "normal",
+                        fontSize: "12px",
+                        padding: "4px 4px 4px 6px",
                         fontFamily: "Poppins",
                       }}
                     >
-                      Select Project
-                    </em>
-                  </MenuItem>
-                  {formData.projects.map((project) => (
-                    <MenuItem
-                      key={project.ProjectID}
-                      value={project.ProjectID}
-                      style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
-                    >
-                      {project.ProjectName}
+                      <em
+                        style={{
+                          height: "30px",
+                          opacity: "0.75",
+                          fontStyle: "normal",
+                          fontFamily: "Poppins",
+                        }}
+                      >
+                        Select Project
+                      </em>
                     </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl
-                fullWidth
-                className="formControl"
-                style={{
-                  flexBasis: "30%",
-                  minWidth: "250px",
-                  display: "flex",
-                  marginLeft: "1.2rem", // Remove unnecessary left margin
-                  marginRight: "0.3rem", // Add right margin to separate form controls
-                }}
-              >
-                <Typography
-                  className="subheader"
-                  style={{
-                    display: "inline",
-                    marginBottom: "0.5rem",
-                    color: "#4F4949",
-                  }}
-                >
-                  Service Division <span className="required">*</span>
-                </Typography>
-                <Select
-                  variant="outlined"
-                  defaultValue=""
-                  name="selectedServiceDivision"
-                  value={formData.selectedServiceDivision}
-                  onChange={handleChange}
-                  displayEmpty
-                  style={{ height: "30px", fontSize: "12px", width: "274px" }}
-                >
-                  <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
-                    <em
-                      style={{
-                        height: "30px",
-                        opacity: "0.75",
-                        fontStyle: "normal",
-                        fontFamily: "Poppins",
-                      }}
-                    >
-                      Select Service Division
-                    </em>
-                  </MenuItem>
-                  {formData.services.map((service) => (
-                    <MenuItem
-                      key={service.id}
-                      value={service.id}
-                      style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
-                    >
-                      {service.service_name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
+                    {formData.projects.map((project) => (
+                      <MenuItem
+                        key={project.ProjectID}
+                        value={project.ProjectID}
+                        style={{ fontSize: "10px", padding: "4px 4px 4px 6px", width: "100px" }}
+                      >
+                        {project.ProjectName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
           )}
-          <Typography className="simpleHeading" style={{ fontWeight: "600", marginBottom: "1rem", paddingTop: "15px" }}>
+          <Typography className="simpleHeading" style={{ fontWeight: "600", marginBottom: "1rem", paddingTop: "2rem" }}>
             Learning Details
           </Typography>
 
@@ -1440,6 +1446,7 @@ const NewTrainingRequest = () => {
                       width: "160px",
                       "& input": {
                         fontSize: "14px",
+                        color: "#787878",
                       },
                     }}
                   />
@@ -1458,7 +1465,7 @@ const NewTrainingRequest = () => {
                       color: "#4F4949",
                     }}
                   >
-                    Request for - Tech Stack / Competency
+                    Tech Stack / Competency
                     <span className="required">*</span>
                   </Typography>
                   <Select
@@ -1520,7 +1527,7 @@ const NewTrainingRequest = () => {
                       color: "#4F4949",
                     }}
                   >
-                    Request for - Primary Skill
+                    Primary Skill
                     <span className="required">*</span>
                   </Typography>
                   <Select
@@ -1530,14 +1537,11 @@ const NewTrainingRequest = () => {
                     SelectDisplayProps={{ style: { fontSize: "12px" } }}
                     onChange={(e) => {
                       const selectedSkills = e.target.value
-                      if (selectedSkills.length = 1) {
-                        setFormData({
-                          ...formData,
-                          selectedPrimarySkill: selectedSkills,
-                        })
-                      }
+                      setFormData({
+                        ...formData,
+                        selectedPrimarySkill: selectedSkills,
+                      })
                     }}
-                    multiple // Allow multiple selections
                     style={{
                       height: "30px",
                       fontSize: "12px",
@@ -1547,7 +1551,7 @@ const NewTrainingRequest = () => {
                   >
                     <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
                       <em style={{ height: "30px", opacity: "1", fontStyle: "normal", fontFamily: "Poppins" }}>
-                        Select Maximum 3 Skills
+                        Select rimary Skill
                       </em>
                     </MenuItem>
                     {formData.primarySkills.map((skill) => (
@@ -1573,7 +1577,7 @@ const NewTrainingRequest = () => {
                   className="subheader"
                   style={{ display: "inline", marginBottom: "0.5rem", color: "#4F4949", maxWidth: "400px" }}
                 >
-                  Provide other skills information in detail <span className="required">*</span>
+                  Enter any other relevant information<span className="required">*</span>
                 </Typography>
                 <ReactQuill
                   value={formData.otherSkill}
@@ -1581,13 +1585,13 @@ const NewTrainingRequest = () => {
                   modules={{
                     toolbar: [["bold", "italic", "underline"]],
                   }}
-                  placeholder="Other Skill Details should be less than 1000 words"
+                  // placeholder="Other Skill Details should be less than 1000 words"
                   style={{
                     height: "138px",
                     fontStyle: "normal",
                     fontFamily: "Poppins",
                     marginTop: "0.5rem",
-                    maxWidth: "400px",
+                    maxWidth: "100%",
                   }}
                 />
               </FormControl>
@@ -1600,7 +1604,7 @@ const NewTrainingRequest = () => {
                   className="subheader"
                   style={{ display: "inline", marginBottom: "0.5rem", color: "#4F4949", maxWidth: "400px" }}
                 >
-                  Suggest completion criteria <span className="required">*</span>
+                  Expected completion criteria <span className="required">*</span>
                 </Typography>
                 <ReactQuill
                   value={formData.completionCriteria}
@@ -1611,7 +1615,7 @@ const NewTrainingRequest = () => {
                   placeholder="Suggest Completion criteria should be less than 1000 words"
                   style={{
                     height: "138px",
-                    maxWidth: "400px",
+                    maxWidth: "100%",
                     marginTop: "0.5rem",
                     fontStyle: "normal",
                     fontFamily: "Poppins",
@@ -1623,8 +1627,11 @@ const NewTrainingRequest = () => {
             {/* Comments Field */}
             <Grid item size={4}>
               <FormControl fullWidth>
-                <Typography className="subheader" style={{ marginBottom: "0.5rem", color: "#4F4949" }}>
-                  Comments
+                <Typography
+                  className="subheader"
+                  style={{ marginBottom: "0.1rem", color: "#4F4949", maxWidth: "400px", display: "inline" }}
+                >
+                  Desired Impact<span className="required">*</span>
                 </Typography>
                 <ReactQuill
                   value={formData.comment}
@@ -1635,7 +1642,7 @@ const NewTrainingRequest = () => {
                   placeholder="Comments should be less than 350 words"
                   style={{
                     height: "138px",
-                    maxWidth: "400px",
+                    maxWidth: "100%",
                     marginTop: "0.5rem",
                   }}
                 />
@@ -1677,7 +1684,7 @@ const NewTrainingRequest = () => {
               </RadioGroup>
             )}
           </FormControl>
-        
+
           <Grid container spacing={5} style={{ gap: "10px" }}>
             {/* Employee Select Section */}
             <Grid item size={4}>
@@ -1690,100 +1697,100 @@ const NewTrainingRequest = () => {
                 </Typography>
 
                 <Autocomplete
-  options={searchResults}
-  getOptionLabel={(option) => option.name || ""}
-  getOptionDisabled={(option) =>
-    formData.employeeDetails === "open"
-      ? option.totalPrimarySkills >= 1
-      : option.totalPrimarySkills >= 3
-  }
-  onInputChange={handleEmployeeSearch}
-  onChange={(event, value) => {
-    if (
-      (formData.employeeDetails === "open" && value && value.totalPrimarySkills < 1) ||
-      (formData.employeeDetails === "add" && value && value.totalPrimarySkills < 3)
-    ) {
-      setSelectedEmployee(value);
-    }
-  }}
-  renderInput={(params) => (
-    <TextField
-      {...params}
-      variant="outlined"
-      placeholder="Search Employees"
-      helperText={
-        formData.employeeDetails === "open"
-          ? "Employees with 1+ ongoing learnings cannot be selected"
-          : "Employees with 3+ ongoing learnings cannot be selected"
-      }
-      InputProps={{
-        ...params.InputProps,
-        style: { fontSize: "12.5px" },
-      }}
-    />
-  )}
-  renderOption={(props, option) => (
-    <li
-      {...props}
-      style={{
-        opacity:
-          formData.employeeDetails === "open"
-            ? option.totalPrimarySkills >= 1
-              ? 0.5
-              : 1
-            : option.totalPrimarySkills >= 3
-            ? 0.5
-            : 1,
-        pointerEvents:
-          formData.employeeDetails === "open"
-            ? option.totalPrimarySkills >= 1
-              ? "none"
-              : "auto"
-            : option.totalPrimarySkills >= 3
-            ? "none"
-            : "auto",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "8px",
-        fontSize: "12px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <Avatar src={option.profileImage} style={{ width: 24, height: 24 }} />
-        <span>{option.name}</span>
-      </div>
+                  options={searchResults}
+                  getOptionLabel={(option) => option.name || ""}
+                  getOptionDisabled={(option) =>
+                    formData.employeeDetails === "open"
+                      ? option.totalPrimarySkills >= 1
+                      : option.totalPrimarySkills >= 3
+                  }
+                  onInputChange={handleEmployeeSearch}
+                  onChange={(event, value) => {
+                    if (
+                      (formData.employeeDetails === "open" && value && value.totalPrimarySkills < 1) ||
+                      (formData.employeeDetails === "add" && value && value.totalPrimarySkills < 3)
+                    ) {
+                      setSelectedEmployee(value)
+                    }
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      variant="outlined"
+                      placeholder="Search Employees"
+                      helperText={
+                        formData.employeeDetails === "open"
+                          ? "Employees with 1+ ongoing learnings cannot be selected"
+                          : "Employees with 3+ ongoing learnings cannot be selected"
+                      }
+                      InputProps={{
+                        ...params.InputProps,
+                        style: { fontSize: "12.5px" },
+                      }}
+                    />
+                  )}
+                  renderOption={(props, option) => (
+                    <li
+                      {...props}
+                      style={{
+                        opacity:
+                          formData.employeeDetails === "open"
+                            ? option.totalPrimarySkills >= 1
+                              ? 0.5
+                              : 1
+                            : option.totalPrimarySkills >= 3
+                              ? 0.5
+                              : 1,
+                        pointerEvents:
+                          formData.employeeDetails === "open"
+                            ? option.totalPrimarySkills >= 1
+                              ? "none"
+                              : "auto"
+                            : option.totalPrimarySkills >= 3
+                              ? "none"
+                              : "auto",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "8px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <Avatar src={option.profileImage} style={{ width: 24, height: 24 }} />
+                        <span>{option.name}</span>
+                      </div>
 
-      {option.totalPrimarySkills > 0 && (
-        <span
-          style={{
-            backgroundColor:
-              option.totalPrimarySkills >= 3
-                ? "#ffebee"
-                : option.totalPrimarySkills === 1
-                ? "#fbfbd3"
-                : "#fbfbd3",
-            borderRadius: "12px",
-            padding: "4px 8px",
-            fontSize: "10px",
-            color: option.totalPrimarySkills >= 3 ? "#c62828" : "#000000",
-          }}
-        >
-          {option.totalPrimarySkills} learnings
-        </span>
-      )}
-    </li>
-  )}
-  PaperComponent={(props) => (
-    <Paper
-      {...props}
-      style={{
-        maxHeight: 300,
-        fontSize: "12px",
-      }}
-    />
-  )}
-/>
+                      {option.totalPrimarySkills > 0 && (
+                        <span
+                          style={{
+                            backgroundColor:
+                              option.totalPrimarySkills >= 3
+                                ? "#ffebee"
+                                : option.totalPrimarySkills === 1
+                                  ? "#fbfbd3"
+                                  : "#fbfbd3",
+                            borderRadius: "12px",
+                            padding: "4px 8px",
+                            fontSize: "10px",
+                            color: option.totalPrimarySkills >= 3 ? "#c62828" : "#000000",
+                          }}
+                        >
+                          {option.totalPrimarySkills} learnings
+                        </span>
+                      )}
+                    </li>
+                  )}
+                  PaperComponent={(props) => (
+                    <Paper
+                      {...props}
+                      style={{
+                        maxHeight: 300,
+                        fontSize: "12px",
+                      }}
+                    />
+                  )}
+                />
               </FormControl>
             </Grid>
 
@@ -1917,7 +1924,7 @@ const NewTrainingRequest = () => {
             )}
             {/* Table for Employees */}
             {formData.showTable && (
-              <Grid item size={12}>
+              <Grid item size={12} style={{ boxShadow: "none" }}>
                 <TableContainer component={Paper} className="tableContainer">
                   <Table size="smaller">
                     <TableHead className="head">
@@ -1938,9 +1945,9 @@ const NewTrainingRequest = () => {
                               placeholder="Search Employees"
                               value={formData.searchQuery}
                               onChange={(e) => setFormData({ ...formData, searchQuery: e.target.value })}
-                              style={{ fontSize: "12px", width: "200px" }}
+                              style={{ fontSize: "12px", width: "200px", marginTop: "16px" }}
                               InputProps={{
-                                style: { fontSize: "12.5px" },
+                                style: { fontSize: "12.5px", color: "#4F4949" },
                               }}
                             />
                           </Box>
@@ -1962,6 +1969,7 @@ const NewTrainingRequest = () => {
                               width: "160px",
                               "& input": {
                                 fontSize: "14px",
+                                color: "#4F4949",
                               },
                             }}
                           />
@@ -1982,6 +1990,7 @@ const NewTrainingRequest = () => {
                               fontFamily: "Poppins",
                               letterSpacing: "-0.5px",
                               padding: "5px",
+                              color: "#4F4949",
                             }}
                           >
                             <MenuItem value="" disabled>
@@ -2003,8 +2012,8 @@ const NewTrainingRequest = () => {
                               })
                             }
                           >
-                            <FormControlLabel value="Yes" control={<Radio size="small" />} label="Yes" />
-                            <FormControlLabel value="No" control={<Radio size="small" />} label="No" />
+                            <FormControlLabel value="Yes" control={<Radio size="small" color=" " />} label="Yes" />
+                            <FormControlLabel value="No" control={<Radio size="small" color=" " />} label="No" />
                           </RadioGroup>
                         </TableCell>
                         <TableCell>
@@ -2030,7 +2039,7 @@ const NewTrainingRequest = () => {
                       </TableRow>
                     </TableHead>
 
-                    <TableBody>
+                    <TableBody sx={{ borderBottom: "1px solid #EAEAEA" }}>
                       {formData.employees
                         .filter((employee) => employee.name.toLowerCase().includes(formData.searchQuery.toLowerCase()))
                         .slice(
@@ -2041,154 +2050,179 @@ const NewTrainingRequest = () => {
                           const isExpanded = expandedEmpId === employee.id
                           const hasActiveLearning = employee.total_requests > 0
 
-                            return (
+                          return (
                             <React.Fragment key={employee.uniqueKey}>
-                              <TableRow sx={{ "& > *": { borderBottom: isExpanded ? "unset" : undefined } }}>
-                              <TableCell>
-                                {hasActiveLearning && (
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleToggleEmpExpand(employee.id)}
-                                  sx={{ padding: "0", marginRight: "4px" }}
-                                >
-                                  {isExpanded ? <KeyboardArrowUp /> : <KeyboardArrowDown sx={{ border: "1px solid black", borderRadius: "50%" }} />}
-                                </IconButton>
-                                )}
-                                {employee.id}
-                              </TableCell>
-                              <TableCell>
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                <Avatar src={employee.profileImage} sx={{ width: 32, height: 32 }} />
-                                {employee.name}
-                                </Box>
-                                {hasActiveLearning && !isExpanded && (
-                                <Box sx={{ display: "flex", alignItems: "center", mt: 0.5, backgroundColor: "#FFFFE6" }}>
-                                  <KeyboardArrowDown sx={{ color: "#000000", fontSize: "14px", mr: 0.5, border: "1px solid black", borderRadius: "50%" }} />
-                                  <Typography
-                                  variant="caption"
-                                  sx={{ color: "#000000", fontWeight: 500, fontSize: "10px !important" }}
+                              <TableRow
+                                sx={{
+                                  "& > *": { borderBottom: isExpanded ? "unset" : undefined },
+                                  borderBottom: "1px solid #EAEAEA",
+                                }}
+                              >
+                                <TableCell>
+                                  {employee.id}
+                                  {hasActiveLearning && (
+                                    <Box
+                                      sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        mt: 0.5,
+                                        backgroundColor: "#FFFFE6",
+                                      }}
+                                    >
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleToggleEmpExpand(employee.id)}
+                                        sx={{ padding: "0", marginRight: "4px" }}
+                                      >
+                                        {isExpanded ? (
+                                          <KeyboardArrowUp fontSize="small" />
+                                        ) : (
+                                          <KeyboardArrowDown
+                                            fontSize="small"
+                                            sx={{ border: "1px solid black", borderRadius: "50%" }}
+                                          />
+                                        )}
+                                      </IconButton>
+                                      <Typography
+                                        variant="caption"
+                                        sx={{ color: "#000000", fontWeight: 500, fontSize: "10px !important" }}
+                                      >
+                                        {employee.total_requests} learning is in progress
+                                      </Typography>
+                                    </Box>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, color: "#4F4949" }}>
+                                    <Avatar src={employee.profileImage} sx={{ width: 32, height: 32 }} />
+                                    {employee.name}
+                                  </Box>
+                                </TableCell>
+                                <TableCell>
+                                  <TextField
+                                    type="date"
+                                    value={employee.availableFrom || ""}
+                                    onChange={(e) => updateEmployee(employee.id, "availableFrom", e.target.value)}
+                                    size="small"
+                                    inputProps={{
+                                      min: new Date().toISOString().split("T")[0],
+                                    }}
+                                    sx={{
+                                      fontSize: "10px",
+                                      fontFamily: "Poppins",
+                                      letterSpacing: "-0.5px",
+                                      padding: "5px",
+                                      width: "160px",
+                                      "& input": { fontSize: "14px", color: "#4F4949" },
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Select
+                                    value={employee.bandwidth || ""}
+                                    onChange={(e) => updateEmployee(employee.id, "bandwidth", e.target.value)}
+                                    size="small"
+                                    displayEmpty
+                                    sx={{
+                                      fontSize: "10px",
+                                      fontFamily: "Poppins",
+                                      letterSpacing: "-0.5px",
+                                      padding: "5px",
+                                      color: "#4F4949",
+                                    }}
                                   >
-                                  {employee.total_requests} learning is in progress
-                                  </Typography>
-                                </Box>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <TextField
-                                type="date"
-                                value={employee.availableFrom || ""}
-                                onChange={(e) => updateEmployee(employee.id, "availableFrom", e.target.value)}
-                                size="small"
-                                inputProps={{
-                                  min: new Date().toISOString().split("T")[0],
-                                }}
-                                sx={{
-                                  fontSize: "10px",
-                                  fontFamily: "Poppins",
-                                  letterSpacing: "-0.5px",
-                                  padding: "5px",
-                                  width: "160px",
-                                  "& input": { fontSize: "14px" },
-                                }}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Select
-                                value={employee.bandwidth || ""}
-                                onChange={(e) => updateEmployee(employee.id, "bandwidth", e.target.value)}
-                                size="small"
-                                displayEmpty
-                                sx={{
-                                  fontSize: "10px",
-                                  fontFamily: "Poppins",
-                                  letterSpacing: "-0.5px",
-                                  padding: "5px",
-                                }}
-                                >
-                                <MenuItem value="" disabled>
-                                  Select
-                                </MenuItem>
-                                <MenuItem value="2 Hours">2 Hours</MenuItem>
-                                <MenuItem value="4 Hours">4 Hours</MenuItem>
-                                <MenuItem value="6 Hours">6 Hours</MenuItem>
-                                <MenuItem value="Full Day">Full Day</MenuItem>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <RadioGroup
-                                row
-                                value={employee.weekend || ""}
-                                onChange={(e) => updateEmployee(employee.id, "weekend", e.target.value)}
-                                >
-                                <FormControlLabel value="Yes" control={<Radio size="small" />} label="Yes" />
-                                <FormControlLabel value="No" control={<Radio size="small" />} label="No" />
-                                </RadioGroup>
-                              </TableCell>
-                              <TableCell>
-                                <IconButton color="error" onClick={() => removeEmployee(employee.id)} size="small">
-                                <CloseIcon />
-                                </IconButton>
-                              </TableCell>
+                                    <MenuItem value="" disabled>
+                                      Select
+                                    </MenuItem>
+                                    <MenuItem value="2 Hours">2 Hours</MenuItem>
+                                    <MenuItem value="4 Hours">4 Hours</MenuItem>
+                                    <MenuItem value="6 Hours">6 Hours</MenuItem>
+                                    <MenuItem value="Full Day">Full Day</MenuItem>
+                                  </Select>
+                                </TableCell>
+                                <TableCell>
+                                  <RadioGroup
+                                    row
+                                    value={employee.weekend || ""}
+                                    onChange={(e) => updateEmployee(employee.id, "weekend", e.target.value)}
+                                  >
+                                    <FormControlLabel
+                                      value="Yes"
+                                      control={<Radio size="small" color=" " />}
+                                      label="Yes"
+                                    />
+                                    <FormControlLabel
+                                      value="No"
+                                      control={<Radio size="small" color=" " />}
+                                      label="No"
+                                    />
+                                  </RadioGroup>
+                                </TableCell>
+                                <TableCell>
+                                  <IconButton color="error" onClick={() => removeEmployee(employee.id)} size="small">
+                                    <CloseIcon />
+                                  </IconButton>
+                                </TableCell>
                               </TableRow>
 
                               {isExpanded && hasActiveLearning && (
-                              <TableRow sx={{ backgroundColor: "#FFFFE6" }}>
-                                <TableCell colSpan={6} style={{ padding: 0 }}>
-                                <Box sx={{ padding: "8px 16px 16px 40px" }}>
-                                  <Grid container spacing={2}>
-                                  <Grid item xs={2}>
-                                    <Typography variant="caption" sx={{ color: "#4F4949" }}>
-                                    Req No:
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                    #{employee.requests?.[0]?.requestid || "231"}
-                                    </Typography>
-                                  </Grid>
-                                  <Grid item xs={2}>
-                                    <Typography variant="caption" sx={{ color: "#4F4949" }}>
-                                    Project
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                    {employee.requests?.[0]?.project_name || "Staffing Nation"}
-                                    </Typography>
-                                  </Grid>
-                                  <Grid item xs={2}>
-                                    <Typography variant="caption" sx={{ color: "#4F4949" }}>
-                                    Objective
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                    {employee.requests?.[0]?.training_objective || "Upskilling"}
-                                    </Typography>
-                                  </Grid>
-                                  <Grid item xs={2}>
-                                    <Typography variant="caption" sx={{ color: "#4F4949" }}>
-                                    Tech Stack
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                    {employee.requests?.[0]?.tech_stacks || "React"}
-                                    </Typography>
-                                  </Grid>
-                                  <Grid item xs={4}>
-                                    <Typography variant="caption" sx={{ color: "#4F4949" }}>
-                                    Requested on
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                    {employee.requests?.[0]?.createddate
-                                      ? new Date(employee.requests[0].createddate).toLocaleDateString("en-US", {
-                                        year: "numeric",
-                                        month: "short",
-                                        day: "numeric",
-                                      })
-                                      : "Jan 20, 2025"}
-                                    </Typography>
-                                  </Grid>
-                                  </Grid>
-                                </Box>
-                                </TableCell>
-                              </TableRow>
+                                <TableRow sx={{ backgroundColor: "#FFFFE6" }}>
+                                  <TableCell colSpan={6} style={{ padding: 0 }}>
+                                    <Box sx={{ padding: "8px 16px 16px 40px" }}>
+                                      <Grid container spacing={4} justifyContent="center">
+                                        <Grid item xs={2} sx={{ textAlign: "center" }}>
+                                          <Typography variant="caption" sx={{ color: "#4F4949" }}>
+                                            Req No:
+                                          </Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                            #{employee.requests?.[0]?.requestid || "231"}
+                                          </Typography>
+                                        </Grid>
+                                        <Grid item xs={2} sx={{ textAlign: "center" }}>
+                                          <Typography variant="caption" sx={{ color: "#4F4949" }}>
+                                            Project
+                                          </Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                            {employee.requests?.[0]?.project_name || "Staffing Nation"}
+                                          </Typography>
+                                        </Grid>
+                                        <Grid item xs={2} sx={{ textAlign: "center" }}>
+                                          <Typography variant="caption" sx={{ color: "#4F4949" }}>
+                                            Objective
+                                          </Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                            {employee.requests?.[0]?.training_objective || "Upskilling"}
+                                          </Typography>
+                                        </Grid>
+                                        <Grid item xs={2} sx={{ textAlign: "center" }}>
+                                          <Typography variant="caption" sx={{ color: "#4F4949" }}>
+                                            Tech Stack
+                                          </Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                            {employee.requests?.[0]?.tech_stacks || "React"}
+                                          </Typography>
+                                        </Grid>
+                                        <Grid item xs={4} sx={{ textAlign: "center" }}>
+                                          <Typography variant="caption" sx={{ color: "#4F4949" }}>
+                                            Requested on
+                                          </Typography>
+                                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                            {employee.requests?.[0]?.createddate
+                                              ? new Date(employee.requests[0].createddate).toLocaleDateString("en-US", {
+                                                  year: "numeric",
+                                                  month: "short",
+                                                  day: "numeric",
+                                                })
+                                              : "Jan 20, 2025"}
+                                          </Typography>
+                                        </Grid>
+                                      </Grid>
+                                    </Box>
+                                  </TableCell>
+                                </TableRow>
                               )}
                             </React.Fragment>
-                            )
+                          )
                         })}
                     </TableBody>
                   </Table>
@@ -2278,6 +2312,7 @@ const NewTrainingRequest = () => {
           </Box>
         </Paper>
       </Paper>
+
       <Dialog
         open={dialogOpen}
         onClose={handleCloseDialog}
@@ -2319,3 +2354,4 @@ const NewTrainingRequest = () => {
   )
 }
 export default NewTrainingRequest
+
