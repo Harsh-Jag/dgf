@@ -1,4 +1,3 @@
-"use client"
 
 import React, { useState, useEffect, useContext } from "react"
 import { useNavigate } from "react-router-dom"
@@ -41,7 +40,6 @@ import AuthContext from "../Auth/AuthContext"
 import CheckCircleIcon from "@mui/icons-material/CheckCircle"
 import { toPascalCase } from "../../utils/stringUtils"
 import getRoleType from "../../utils/roleUtils"
-import { arrayBufferToBase64 } from "../../utils/ImgConveter"
 import Grid from "@mui/material/Grid2"
 import { KeyboardArrowDown, KeyboardArrowUp } from "@mui/icons-material"
 
@@ -52,11 +50,12 @@ const CustomRadio = styled(Radio)({
 const NewTrainingRequest = () => {
   const navigate = useNavigate()
   const { user } = useContext(AuthContext) // Get the user from AuthContext
+  // In the component initialization, update the initial state to set trainingPurpose based on role_id
   const [formData, setFormData] = useState({
     completionCriteria: "",
     otherSkill: "",
     comment: "",
-    trainingPurpose: "prospect",
+    trainingPurpose: user?.role_id === 8 || user?.role_id === 4 ? "prospect" : "project",
     employeeDetails: "add",
     selectedDate: null,
     availableFromDate: null,
@@ -74,11 +73,11 @@ const NewTrainingRequest = () => {
     techStacks: [],
     selectedTechStack: "",
     primarySkills: [],
-    selectedPrimarySkill: "",
+    selectedPrimarySkill: [],
     projects: [],
     selectedProject: "",
     employeeLevels: [],
-    selectedEmployeeLevel: [],
+    selectedEmployeeLevel: "",
     services: [],
     requestonbehalf: "",
     prospectName: "",
@@ -97,16 +96,12 @@ const NewTrainingRequest = () => {
   const [snackbarSeverity, setSnackbarSeverity] = useState("success")
   const [isFormValid, setIsFormValid] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-
-  useEffect(() => {
-    // Set default training purpose to "project" for roles other than 8 and 4
-    if (user && user.role_id !== 8 && user.role_id !== 4) {
-      setFormData((prevState) => ({
-        ...prevState,
-        trainingPurpose: "project",
-      }))
-    }
-  }, [user])
+  const [projectOptions, setProjectOptions] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [learningObjError, setLearningObjError] = useState(false)
+  const [learningObjErrorMessage, setLearningObjErrorMessage] = useState("")
+  const [primarySkillError, setPrimarySkillError] = useState(false)
+  const [primarySkillErrorMessage, setPrimarySkillErrorMessage] = useState("")
 
   const validateForm = () => {
     const requiredFields = [
@@ -151,7 +146,7 @@ const NewTrainingRequest = () => {
       formData.employees.length > 0 &&
       formData.employees.every((emp) => emp.availableFrom && emp.bandwidth && emp.weekend)
     setIsFormValid(validateForm() && isEmployeeDetailsValid)
-  }, [formData, formData.employees, formData.otherSkill, formData.completionCriteria, validateForm])
+  }, [formData, formData.employees, formData.otherSkill, formData.completionCriteria])
 
   const [expandedEmpId, setExpandedEmpId] = useState(null)
 
@@ -190,6 +185,7 @@ const NewTrainingRequest = () => {
           setFormData((prevFormData) => ({
             ...prevFormData,
             sources: data,
+            trainingPurpose: user.role_id === 8 || user.role_id === 4 ? prevFormData.trainingPurpose : "project",
           }))
         })
         .catch((error) => console.error("Error fetching sources:", error))
@@ -291,10 +287,6 @@ const NewTrainingRequest = () => {
 
     setIsFormValid(validateForm())
   }
-  // const handleDateChange = (newValue) => {
-  //   setFormData({ ...formData, selectedDate: newValue });
-  //   setIsFormValid(validateForm());
-  // };
 
   const handleSourceChange = (e) => {
     const selectedSource = e.target.value
@@ -354,12 +346,27 @@ const NewTrainingRequest = () => {
   }
 
   const handleTrainingObjectiveChange = (e) => {
+    if (!formData.selectedSource) {
+      setLearningObjError(true)
+      setLearningObjErrorMessage("Please select Designation first")
+      return
+    }
+
+    setLearningObjError(false)
+    setLearningObjErrorMessage("")
     const selectedTrainingObjective = e.target.value
     setFormData({ ...formData, selectedTrainingObjective })
     setIsFormValid(validateForm())
   }
 
   const handleTechStackChange = (e) => {
+    if (!formData.selectedSource || !formData.selectedTrainingObjective) {
+      setSnackbarMessage("Please select Designation and Learning Objective first")
+      setSnackbarSeverity("error")
+      setSnackbarOpen(true)
+      return
+    }
+
     const selectedTechStack = e.target.value
     setFormData({ ...formData, selectedTechStack })
     setIsFormValid(validateForm())
@@ -454,8 +461,8 @@ const NewTrainingRequest = () => {
                 id: emp.emp_id,
                 name: emp.emp_name,
                 email: emp.emp_email,
-                profileImage: emp.profile_image?.data
-                  ? `data:image/jpeg;base64,${arrayBufferToBase64(emp.profile_image.data)}`
+                profileImage: emp.profile_image
+                  ? emp.profile_image // Use the URL directly
                   : "/placeholder.svg", // Use a placeholder image if profile_image is null
                 uniqueKey: `${emp.emp_id}-${Date.now()}`,
                 totalPrimarySkills: emp.totalPrimarySkills,
@@ -508,43 +515,7 @@ const NewTrainingRequest = () => {
 
       if (response.ok && data.length > 0) {
         const employee = data[0]
-
-        // Check if employee already exists in the list
         if (!formData.employees.some((existingEmp) => existingEmp.id === employee.emp_id)) {
-          // Fetch learning data to check how many learnings the employee has
-          let learnerResponse
-          let learnerData
-
-          if (formData.employeeDetails === "open") {
-            learnerResponse = await fetch(
-              `http://localhost:8000/api/orgLevelLearners/getOrgLevelLearnerData/${employee.emp_id}`,
-            )
-            learnerData = await learnerResponse.json()
-
-            // For org level, check if employee has more than 2 learnings
-            if (learnerData.total_requests > 2) {
-              setSnackbarMessage(
-                `Failed to add employee ${employee.emp_name} because they already have three learnings.`,
-              )
-              setSnackbarSeverity("error")
-              setSnackbarOpen(true)
-              return null
-            }
-          } else {
-            learnerResponse = await fetch(`http://localhost:8000/api/learners/getLearners/${employee.emp_id}`)
-            learnerData = await learnerResponse.json()
-
-            // For regular add, check if employee has 3 or more learnings
-            if (learnerData.total_primary_skills >= 3) {
-              setSnackbarMessage(
-                `Failed to add employee ${employee.emp_name} because they already have three learnings.`,
-              )
-              setSnackbarSeverity("error")
-              setSnackbarOpen(true)
-              return null
-            }
-          }
-
           return {
             id: employee.emp_id,
             name: employee.emp_name,
@@ -552,12 +523,10 @@ const NewTrainingRequest = () => {
             availableFrom: "",
             bandwidth: "",
             weekend: "",
-            profileImage: employee.profile_image?.data
-              ? `data:image/jpeg;base64,${arrayBufferToBase64(employee.profile_image.data)}`
-              : "/placeholder.svg",
-            uniqueKey: `${employee.emp_id}-${Date.now()}`,
-            total_requests: learnerData.total_requests || learnerData.total_primary_skills || 0,
-            requests: learnerData.requests || [],
+            profileImage: employee.profile_image
+              ? employee.profile_image // Use the URL directly
+              : "/placeholder.svg", // Use a placeholder image if profile_image is null
+            uniqueKey: `${employee.emp_id}-${Date.now()}`, // Add unique key
           }
         }
       } else {
@@ -580,10 +549,10 @@ const NewTrainingRequest = () => {
 
     // Fetch employees based on selected employee levels if "Place an Open Request" is selected
     if (formData.selectedEmployeeLevel.length > 0) {
-      const levelIds = formData.selectedEmployeeLevel.join(",")
+      const levelNames = formData.selectedEmployeeLevel.join(",")
       try {
         const response = await fetch(
-          `http://localhost:8000/api/employeeDesignation/getEmployeesByDesignation?designationIds=${levelIds}`,
+          `http://localhost:8000/api/employeeDesignation/getEmployeesByDesignation?designationNames=${levelNames}`,
         )
         const data = await response.json()
         if (response.ok) {
@@ -594,7 +563,9 @@ const NewTrainingRequest = () => {
             availableFrom: "",
             bandwidth: "",
             weekend: "",
-            profileImage: `data:image/jpeg;base64,${arrayBufferToBase64(emp.profile_image.data)}`, // Convert image data to base64
+            profileImage: emp.profile_image
+              ? emp.profile_image // Use the URL directly
+              : "/placeholder.svg", // Use a placeholder image if profile_image is null
             uniqueKey: `${emp.emp_id}-${Date.now()}`, // Add unique key
           }))
 
@@ -627,10 +598,26 @@ const NewTrainingRequest = () => {
     setIsFormValid(validateForm())
   }
 
+  const fetchProjects = async (searchTerm) => {
+    setLoading(true)
+    try {
+      const response = await fetch(`http://localhost:8000/api/project-search/search?letter=${searchTerm}`)
+      const data = await response.json()
+      setProjectOptions(data)
+    } catch (error) {
+      console.error("Error fetching projects:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchProjects("") // Fetch all projects initially
+  }, [])
+
   const addEmployee = async () => {
     const newEmployees = []
     const invalidEmails = []
-    const tooManyLearningsEmails = []
 
     // Add selected employee from "Select Employee" field
     if (selectedEmployee && !formData.employees.some((emp) => emp.id === selectedEmployee.id)) {
@@ -661,14 +648,26 @@ const NewTrainingRequest = () => {
       for (const email of uniqueEmails) {
         const employee = await handleEmailSearch(email)
         if (employee) {
-          newEmployees.push(employee)
+          try {
+            const response = await fetch(`http://localhost:8000/api/learners/getLearners/${employee.id}`)
+            const data = await response.json()
+
+            newEmployees.push({
+              ...employee,
+              availableFrom: "",
+              bandwidth: "",
+              weekend: "",
+              total_requests: data.total_requests || 0,
+              requests: data.requests || [],
+            })
+          } catch (error) {
+            console.error("Error fetching employee requests:", error)
+            newEmployees.push(employee)
+          }
         } else {
-          // Check if it's an invalid email or an employee with too many learnings
-          // This is a simplified check - the actual error message would come from handleEmailSearch
           invalidEmails.push(email)
         }
       }
-
       if (invalidEmails.length > 0) {
         setSnackbarMessage(`Invalid emails: ${invalidEmails.join(", ")}`)
         setSnackbarSeverity("error")
@@ -679,11 +678,10 @@ const NewTrainingRequest = () => {
     setFormData((prev) => ({
       ...prev,
       employees: [...prev.employees, ...newEmployees],
-      showTable: newEmployees.length > 0 || prev.employees.length > 0,
+      showTable: newEmployees.length > 0,
       showSummary: true,
       emails: "",
     }))
-
     setTimeout(() => {
       setIsFormValid(validateForm())
     }, 0)
@@ -795,7 +793,7 @@ const NewTrainingRequest = () => {
         if (formData.employeeDetails === "open" && formData.selectedEmployeeLevel.length > 0) {
           const employeeLevelRequestBody = {
             requestid: newRequestId, // Use the newRequestId here
-            employee_level_ids: formData.selectedEmployeeLevel.filter((id) => id !== undefined), // Use selectedEmployeeLevel
+            designation_names: formData.selectedEmployeeLevel.filter((name) => name !== undefined), // Use selectedEmployeeLevel
           }
 
           console.log("Submitting request body to training-request/employee-levels API:", employeeLevelRequestBody) // Log the request body
@@ -1142,39 +1140,47 @@ const NewTrainingRequest = () => {
                 >
                   Learning Objective <span className="required">*</span>
                 </Typography>
-                <Select
-                  variant="outlined"
-                  name="trainingObjective"
-                  value={formData.selectedTrainingObjective}
-                  onChange={handleTrainingObjectiveChange}
-                  displayEmpty
-                  style={{
-                    height: "30px",
-                    fontSize: "12px",
-                  }}
-                >
-                  <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
-                    <em
-                      style={{
-                        height: "30px",
-                        opacity: "0.75",
-                        fontStyle: "normal",
-                        fontFamily: "Poppins",
-                      }}
-                    >
-                      Select Learning Objective
-                    </em>
-                  </MenuItem>
-                  {formData.trainingObjectives.map((objective) => (
-                    <MenuItem
-                      key={objective.training_id}
-                      value={objective.training_id}
-                      style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
-                    >
-                      {objective.training_name}
+                <Tooltip title={learningObjErrorMessage} open={learningObjError} placement="bottom-end" arrow>
+                  <Select
+                    variant="outlined"
+                    name="trainingObjective"
+                    value={formData.selectedTrainingObjective}
+                    onChange={handleTrainingObjectiveChange}
+                    onClick={() => {
+                      if (!formData.selectedSource) {
+                        setLearningObjError(true)
+                        setLearningObjErrorMessage("Please select Designation first")
+                      }
+                    }}
+                    displayEmpty
+                    style={{
+                      height: "30px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
+                      <em
+                        style={{
+                          height: "30px",
+                          opacity: "0.75",
+                          fontStyle: "normal",
+                          fontFamily: "Poppins",
+                        }}
+                      >
+                        Select Learning Objective
+                      </em>
                     </MenuItem>
-                  ))}
-                </Select>
+                    {formData.trainingObjectives.map((objective) => (
+                      <MenuItem
+                        key={objective.training_id}
+                        value={objective.training_id}
+                        style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
+                      >
+                        {objective.training_name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </Tooltip>
               </FormControl>
             </Grid>
           </Grid>
@@ -1185,27 +1191,32 @@ const NewTrainingRequest = () => {
           >
             Skilling For
           </Typography>
+          {/* Replace the RadioGroup for trainingPurpose with this updated version */}
           <FormControl component="fieldset" style={{ marginBottom: "0.5rem" }}>
-            <RadioGroup
-              row
-              name="trainingPurpose"
-              value={formData.trainingPurpose}
-              onChange={(e) => {
-                // Only allow changes if role_id is 8 or 4
-                if (user.role_id === 8 || user.role_id === 4) {
-                  handleChange(e)
-                }
-              }}
-            >
+            <RadioGroup row name="trainingPurpose" value={formData.trainingPurpose} onChange={handleChange}>
               <FormControlLabel
                 value="prospect"
-                control={<CustomRadio sx={{ "& .MuiSvgIcon-root": { color: "#707070" } }} />}
+                control={
+                  <CustomRadio
+                    sx={{
+                      "& .MuiSvgIcon-root": {
+                        color: user?.role_id === 8 || user?.role_id === 4 ? "#707070" : "#d0d0d0",
+                      },
+                    }}
+                    disabled={!(user?.role_id === 8 || user?.role_id === 4)}
+                  />
+                }
                 label={
-                  <Typography className="subheader" style={{ fontWeight: "600" }}>
+                  <Typography
+                    className="subheader"
+                    style={{
+                      fontWeight: "600",
+                      color: user?.role_id === 8 || user?.role_id === 4 ? "#4F4949" : "#d0d0d0",
+                    }}
+                  >
                     Prospect
                   </Typography>
                 }
-                disabled={user.role_id !== 8 && user.role_id !== 4}
               />
               <FormControlLabel
                 value="project"
@@ -1216,7 +1227,6 @@ const NewTrainingRequest = () => {
                     Existing Project
                   </Typography>
                 }
-                disabled={user.role_id !== 8 && user.role_id !== 4}
               />
             </RadioGroup>
           </FormControl>
@@ -1279,7 +1289,6 @@ const NewTrainingRequest = () => {
                   fullWidth
                   style={{
                     display: "flex",
-                    marginLeft: "0",
                     marginRight: "0.6rem",
                   }}
                 >
@@ -1367,49 +1376,35 @@ const NewTrainingRequest = () => {
                   >
                     Project Name <span className="required">*</span>
                   </Typography>
-                  <Select
-                    variant="outlined"
-                    name="prospectName"
-                    value={formData.selectedProject}
-                    onChange={(e) =>
+
+                  <Autocomplete
+                    options={formData.projects}
+                    getOptionLabel={(option) => option.ProjectName}
+                    value={formData.projects.find((project) => project.ProjectID === formData.selectedProject) || null}
+                    onChange={(event, value) =>
                       setFormData({
                         ...formData,
-                        selectedProject: e.target.value === formData.selectedProject ? "" : e.target.value,
+                        selectedProject: value ? value.ProjectID : "",
                       })
                     }
-                    displayEmpty
-                    style={{ height: "30px", fontSize: "12px", minWidth: "100%" }}
-                  >
-                    <MenuItem
-                      disabled
-                      value=""
-                      style={{
-                        fontSize: "12px",
-                        padding: "4px 4px 4px 6px",
-                        fontFamily: "Poppins",
-                      }}
-                    >
-                      <em
-                        style={{
-                          height: "30px",
-                          opacity: "0.75",
-                          fontStyle: "normal",
-                          fontFamily: "Poppins",
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        variant="outlined"
+                        placeholder="Search Projects"
+                        style={{ height: "30px", fontSize: "12px", minWidth: "100%" }}
+                        InputProps={{
+                          ...params.InputProps,
+                          style: { fontSize: "12px" },
                         }}
-                      >
-                        Select Project
-                      </em>
-                    </MenuItem>
-                    {formData.projects.map((project) => (
-                      <MenuItem
-                        key={project.ProjectID}
-                        value={project.ProjectID}
-                        style={{ fontSize: "10px", padding: "4px 4px 4px 6px", width: "100px" }}
-                      >
-                        {project.ProjectName}
-                      </MenuItem>
-                    ))}
-                  </Select>
+                      />
+                    )}
+                    renderOption={(props, option) => (
+                      <li {...props} style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
+                        {option.ProjectName}
+                      </li>
+                    )}
+                  />
                 </FormControl>
               </Grid>
             </Grid>
@@ -1442,11 +1437,11 @@ const NewTrainingRequest = () => {
                       fontSize: "10px",
                       fontFamily: "Poppins",
                       letterSpacing: "-0.5px", // Reduce letter spacing
-                      padding: "5px",
+
                       width: "160px",
                       "& input": {
-                        fontSize: "14px",
-                        color: "#787878",
+                        fontSize: "13px",
+                        color: formData.selectedDate ? "#4F4949" : "#787878", // Change color when a date is selected
                       },
                     }}
                   />
@@ -1530,40 +1525,56 @@ const NewTrainingRequest = () => {
                     Primary Skill
                     <span className="required">*</span>
                   </Typography>
-                  <Select
-                    variant="outlined"
-                    name="primarySkill"
-                    value={formData.selectedPrimarySkill}
-                    SelectDisplayProps={{ style: { fontSize: "12px" } }}
-                    onChange={(e) => {
-                      const selectedSkills = e.target.value
-                      setFormData({
-                        ...formData,
-                        selectedPrimarySkill: selectedSkills,
-                      })
-                    }}
-                    style={{
-                      height: "30px",
-                      fontSize: "12px",
-                      opacity: 1,
-                      marginLeft: "0px",
-                    }}
-                  >
-                    <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
-                      <em style={{ height: "30px", opacity: "1", fontStyle: "normal", fontFamily: "Poppins" }}>
-                        Select rimary Skill
-                      </em>
-                    </MenuItem>
-                    {formData.primarySkills.map((skill) => (
-                      <MenuItem
-                        key={skill.skill_id}
-                        value={skill.skill_id}
-                        style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
-                      >
-                        {skill.skill_name}
+                  <Tooltip title={primarySkillErrorMessage} open={primarySkillError} placement="bottom-end" arrow>
+                    <Select
+                      variant="outlined"
+                      name="primarySkill"
+                      value={formData.selectedPrimarySkill}
+                      SelectDisplayProps={{ style: { fontSize: "12px" } }}
+                      onClick={() => {
+                        if (!formData.selectedTechStack) {
+                          setPrimarySkillError(true)
+                          setPrimarySkillErrorMessage("Please select Tech Stack first")
+                        }
+                      }}
+                      onChange={(e) => {
+                        if (!formData.selectedTechStack) {
+                          setPrimarySkillError(true)
+                          setPrimarySkillErrorMessage("Please select Tech Stack first")
+                          return
+                        }
+
+                        setPrimarySkillError(false)
+                        setPrimarySkillErrorMessage("")
+                        const selectedSkills = e.target.value
+                        setFormData({
+                          ...formData,
+                          selectedPrimarySkill: selectedSkills,
+                        })
+                      }}
+                      style={{
+                        height: "30px",
+                        fontSize: "12px",
+                        opacity: 1,
+                        marginLeft: "0px",
+                      }}
+                    >
+                      <MenuItem disabled value="" style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}>
+                        <em style={{ height: "30px", opacity: "1", fontStyle: "normal", fontFamily: "Poppins" }}>
+                          Select Primary Skill
+                        </em>
                       </MenuItem>
-                    ))}
-                  </Select>
+                      {formData.primarySkills.map((skill) => (
+                        <MenuItem
+                          key={skill.skill_id}
+                          value={skill.skill_id}
+                          style={{ fontSize: "12px", padding: "4px 4px 4px 6px" }}
+                        >
+                          {skill.skill_name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Tooltip>
                 </FormControl>
               </Grid>
             </Grid>
@@ -1571,7 +1582,7 @@ const NewTrainingRequest = () => {
 
           <Grid container spacing={5} marginTop="1rem">
             {/* Other Skills Field */}
-            <Grid item size={4}>
+            <Grid item size={4} style={{ maxWidth: "400px" }}>
               <FormControl fullWidth>
                 <Typography
                   className="subheader"
@@ -1598,7 +1609,7 @@ const NewTrainingRequest = () => {
             </Grid>
 
             {/* Completion Criteria Field */}
-            <Grid item size={4}>
+            <Grid item size={4} style={{ maxWidth: "400px" }}>
               <FormControl fullWidth>
                 <Typography
                   className="subheader"
@@ -1625,11 +1636,11 @@ const NewTrainingRequest = () => {
             </Grid>
 
             {/* Comments Field */}
-            <Grid item size={4}>
+            <Grid item size={4} style={{ maxWidth: "400px" }}>
               <FormControl fullWidth>
                 <Typography
                   className="subheader"
-                  style={{ marginBottom: "0.1rem", color: "#4F4949", maxWidth: "400px", display: "inline" }}
+                  style={{ marginBottom: "0.5rem", color: "#4F4949", maxWidth: "400px", display: "inline" }}
                 >
                   Desired Impact<span className="required">*</span>
                 </Typography>
@@ -1888,8 +1899,8 @@ const NewTrainingRequest = () => {
                       <em>Select Employee Level</em>
                     </MenuItem>
                     {formData.employeeLevels.map((level) => (
-                      <MenuItem key={level.id} value={level.id}>
-                        {level.job_title}
+                      <MenuItem key={level.Designation_Name} value={level.Designation_Name}>
+                        {level.Designation_Name}
                       </MenuItem>
                     ))}
                   </Select>
@@ -2336,7 +2347,7 @@ const NewTrainingRequest = () => {
         >
           <CheckCircleIcon style={{ color: "green", fontSize: "3rem", marginBottom: "10px" }} />
           Request generated successfully with request number :
-          <strong style={{ fontSize: "18px", color: "#333" }}>{newRequestId}</strong>.
+          <strong style={{ fontSize: "18px", color: "#333" }}>LR{newRequestId}</strong>.
           <IconButton
             onClick={handleCloseDialog}
             style={{
@@ -2354,4 +2365,3 @@ const NewTrainingRequest = () => {
   )
 }
 export default NewTrainingRequest
-
