@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect } from "react"
 import {
   Box,
@@ -406,7 +404,7 @@ export default function CourseTracker() {
   const handleModalClose = () => {
     setShowAssignModal(false)
     setSelectedEmployees([])
-    //fetchLearnersData(); // Reload the parent component
+    fetchLearnersData() // Uncomment this line to reload the data
   }
   return (
     <Box
