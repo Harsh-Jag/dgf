@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from "react"
 import {
   Box,
@@ -20,12 +18,17 @@ import {
 } from "@mui/material"
 import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
-import { Download, Refresh, CalendarMonth } from "@mui/icons-material"
+import { Download, Refresh } from "@mui/icons-material"
+
+// Custom CSS for calendar
+import "./calendar-styles.css"
 
 const statusFilters = [
   { value: "all", label: "All" },
   { value: "Completed", label: "Completed" },
-  { value: "In Progress", label: "In Progress" },
+  { value: "Learning Initiated", label: "Learning Initiated" },
+  { value: "Overdue", label: "Over Due/Past Due" },
+  { value: "DueForCompletion", label: "Due for completion" },
   { value: "Learning Suspended", label: "Suspended" },
   { value: "Completed with Delay", label: "Delayed" },
   { value: "Incomplete", label: "Incomplete" },
@@ -36,7 +39,7 @@ const getStatusColor = (status) => {
   switch (status) {
     case "Completed":
       return "#4CAF50"
-    case "In Progress":
+    case "Learning Initiated":
       return "#FFC107"
     case "Learning Suspended":
       return "#F44336"
@@ -46,6 +49,8 @@ const getStatusColor = (status) => {
       return "#FF5722"
     case "Rejected":
       return "#E91E63"
+    case "Overdue":
+      return "#FF9800"
     default:
       return "#757575"
   }
@@ -61,15 +66,18 @@ const DownloadReport = () => {
   const [error, setError] = useState(null)
   const [selectedStatus, setSelectedStatus] = useState("all")
   const [page, setPage] = useState(1)
+  const [noDataMessage, setNoDataMessage] = useState(null)
 
   const handleViewReport = async () => {
     if (!fromDate || !toDate) {
       setError("Please select both start and end dates")
+      setNoDataMessage(null)
       return
     }
 
     setLoading(true)
     setError(null)
+    setNoDataMessage(null)
 
     try {
       const from = fromDate.toISOString().split("T")[0]
@@ -85,15 +93,29 @@ const DownloadReport = () => {
       }
 
       const data = await response.json()
+
       if (!data.success) {
         throw new Error(data.error || "Invalid response from server")
       }
 
-      setReportData(data.data || [])
-      setPage(1)
+      if (data.data.length === 0) {
+        setNoDataMessage("No data found for the selected filters")
+        setReportData([])
+      } else {
+        setReportData(data.data || [])
+        setPage(1)
+      }
     } catch (err) {
       console.error("Error:", err)
-      setError(err.message || "Failed to load report")
+
+      // Check if the error is "No data found for the selected filters"
+      if (err.message && err.message.includes("No data found for the selected filters")) {
+        setNoDataMessage("No data found for the selected filters")
+        setError(null)
+      } else {
+        setError(err.message || "Failed to load report")
+      }
+
       setReportData([])
     } finally {
       setLoading(false)
@@ -118,6 +140,7 @@ const DownloadReport = () => {
     setSelectedStatus("all")
     setReportData([])
     setError(null)
+    setNoDataMessage(null)
   }
 
   const handlePageChange = (event, newPage) => {
@@ -152,6 +175,12 @@ const DownloadReport = () => {
         </Alert>
       )}
 
+      {noDataMessage && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          {noDataMessage}
+        </Alert>
+      )}
+
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <Stack spacing={3} sx={{ mb: 4 }}>
           <Box
@@ -170,13 +199,11 @@ const DownloadReport = () => {
                 value={fromDate}
                 onChange={setFromDate}
                 format="MM/dd/yyyy"
+                className="small-calendar"
                 slotProps={{
                   textField: {
                     fullWidth: true,
                     size: "small",
-                    // InputProps: {
-                    //   startAdornment: <CalendarMonth sx={{ color: "primary.main", fontSize: 18, mr: 0.5 }} />,
-                    // },
                     sx: {
                       "& .MuiInputBase-root": {
                         height: 36,
@@ -199,17 +226,26 @@ const DownloadReport = () => {
                   desktopPaper: {
                     sx: {
                       "& .MuiPickersDay-root": {
-                        fontSize: "0.8rem",
-                        width: 32,
-                        height: 32,
+                        fontSize: "0.75rem",
+                        width: 28,
+                        height: 28,
+                        margin: "1px",
                       },
                       "& .MuiDayCalendar-header": {
                         "& .MuiTypography-root": {
-                          fontSize: "0.75rem",
+                          fontSize: "0.7rem",
                         },
                       },
                       "& .MuiPickersCalendarHeader-label": {
-                        fontSize: "0.9rem",
+                        fontSize: "0.85rem",
+                      },
+                      "& .MuiPickersCalendarHeader-switchViewButton": {
+                        width: "24px",
+                        height: "24px",
+                      },
+                      "& .MuiPickersArrowSwitcher-button": {
+                        width: "24px",
+                        height: "24px",
                       },
                     },
                   },
@@ -226,13 +262,11 @@ const DownloadReport = () => {
                 onChange={setToDate}
                 minDate={fromDate}
                 format="MM/dd/yyyy"
+                className="small-calendar"
                 slotProps={{
                   textField: {
                     fullWidth: true,
                     size: "small",
-                    // InputProps: {
-                    //   startAdornment: <CalendarMonth sx={{ color: "primary.main", fontSize: 18, mr: 0.5 }} />,
-                    // },
                     sx: {
                       "& .MuiInputBase-root": {
                         height: 36,
@@ -255,17 +289,26 @@ const DownloadReport = () => {
                   desktopPaper: {
                     sx: {
                       "& .MuiPickersDay-root": {
-                        fontSize: "0.8rem",
-                        width: 32,
-                        height: 32,
+                        fontSize: "0.75rem",
+                        width: 28,
+                        height: 28,
+                        margin: "1px",
                       },
                       "& .MuiDayCalendar-header": {
                         "& .MuiTypography-root": {
-                          fontSize: "0.75rem",
+                          fontSize: "0.7rem",
                         },
                       },
                       "& .MuiPickersCalendarHeader-label": {
-                        fontSize: "0.9rem",
+                        fontSize: "0.85rem",
+                      },
+                      "& .MuiPickersCalendarHeader-switchViewButton": {
+                        width: "24px",
+                        height: "24px",
+                      },
+                      "& .MuiPickersArrowSwitcher-button": {
+                        width: "24px",
+                        height: "24px",
                       },
                     },
                   },
@@ -362,82 +405,141 @@ const DownloadReport = () => {
               borderColor: "divider",
               mb: 2,
               boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+              "& .MuiTableCell-root": {
+                fontSize: "12px !important",
+              },
             }}
           >
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow sx={{ borderBottom: "2px solid #8FBEF8" }}>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Request ID</TableCell>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Project</TableCell>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Employee</TableCell>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Assigned Date</TableCell>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Progress</TableCell>
-                  <TableCell sx={{ fontWeight: "600", backgroundColor: "white" }}>Course Type</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>Request ID</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Project Name
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    New Prospect (Y/N)
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Prospect Name
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>Course Name</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Employee Name
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Employee Mail Id
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Employee Designation
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Course Status
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>Comments</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>User Status</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>Skill Type</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Assigned Date
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Expected Learning Completion Date
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Actual Learning Completion Date
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>Progress</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Request Created By
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Request Assigned To
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Course Assigned By
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Training Duration
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Faculty/Mentor Name
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Faculty/Mentor Mail Id
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Faculty/Mentor Designation
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>Course Type</TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Effectiveness Initiated (Y/N)
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 100, fontWeight: "600", backgroundColor: "white" }}>
+                    Service Division (Tech/Content)
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {paginatedData.length > 0 ? (
                   paginatedData.map((row, index) => (
                     <TableRow
-                      key={`row-${row.RequestID}-${index}`}
+                      key={`row-${row["Request ID"]}-${index}`}
                       hover
                       sx={{ backgroundColor: index % 2 === 0 ? "#F1F2FD" : "white" }}
                     >
-                      <TableCell>{row.RequestID}</TableCell>
-                      <TableCell>{row.ProjectName}</TableCell>
-                      <TableCell>{row.EmployeeName}</TableCell>
+                      <TableCell>{row["Request ID"]}</TableCell>
+                      <TableCell>{row["Project Name"]}</TableCell>
+                      <TableCell>{row["New Prospect (Y/N)"]}</TableCell>
+                      <TableCell>{row["Prospect Name"]}</TableCell>
+                      <TableCell>{row["Course Name"]}</TableCell>
+                      <TableCell>{row["Employee Name"]}</TableCell>
+                      <TableCell>{row["Employee Mail Id"]}</TableCell>
+                      <TableCell>{row["Employee Designation"]}</TableCell>
                       <TableCell>
-                        <Box
-                          sx={{
-                            color: getStatusColor(row.CourseStatus),
-                            fontWeight: "500",
-                          }}
-                        >
-                          {row.CourseStatus}
+                        <Box sx={{ color: getStatusColor(row["Course Status"]), fontWeight: "500" }}>
+                          {row["Course Status"]}
                         </Box>
                       </TableCell>
-                      <TableCell>{row.AssignedDate}</TableCell>
+                      <TableCell>{row["Comments"] || "-"}</TableCell>
+                      <TableCell>{row["User Status"]}</TableCell>
+                      <TableCell>{row["Skill Type"]}</TableCell>
+                      <TableCell>{row["Assigned Date"]}</TableCell>
+                      <TableCell>{row["Expected Learning Completion Date"]}</TableCell>
+                      <TableCell>{row["Actual Learning Completion Date"]}</TableCell>
                       <TableCell>
-                        <Box
-                          sx={{
-                            width: "100%",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              width: "100%",
-                              bgcolor: "divider",
-                              borderRadius: 2,
-                              overflow: "hidden",
-                            }}
-                          >
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                          <Box sx={{ width: "100%", bgcolor: "divider", borderRadius: 2, overflow: "hidden" }}>
                             <Box
                               sx={{
-                                width: `${row.Progress}%`,
+                                width: `${row["Progress"]}%`,
                                 height: 6,
                                 bgcolor:
-                                  row.Progress >= 80
+                                  row["Progress"] >= 80
                                     ? "success.main"
-                                    : row.Progress >= 50
+                                    : row["Progress"] >= 50
                                       ? "warning.main"
                                       : "error.main",
-                                transition: "width 0.3s",
                               }}
                             />
                           </Box>
-                          <span>{row.Progress}%</span>
+                          <span>{row["Progress"]}%</span>
                         </Box>
                       </TableCell>
-                      <TableCell>{row.CourseType}</TableCell>
+                      <TableCell>{row["Request Created By"]}</TableCell>
+                      <TableCell>{row["Request Assigned To"]}</TableCell>
+                      <TableCell>{row["Course Assigned By"] || "-"}</TableCell>
+                      <TableCell>{row["Training Duration"]}</TableCell>
+                      <TableCell>{row["Faculty/Mentor Name"]}</TableCell>
+                      <TableCell>{row["Faculty/Mentor Mail Id"]}</TableCell>
+                      <TableCell>{row["Faculty/Mentor Designation"]}</TableCell>
+                      <TableCell>{row["Course Type"]}</TableCell>
+                      <TableCell>{row["Effectiveness Initiated (Y/N)"]}</TableCell>
+                      <TableCell>{row["Service Division (Tech/Content)"]}</TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                    <TableCell colSpan={26} align="center" sx={{ py: 3 }}>
                       No records to display for this page
                     </TableCell>
                   </TableRow>
