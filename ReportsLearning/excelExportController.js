@@ -1,7 +1,8 @@
+// excelExportController
+
 const excelExportService = require('../services/excelExportService');
 const fs = require('fs');
 const path = require('path');
-const connection = require('../config/db');
 
 const exportExcel = (req, res) => {
   try {
@@ -83,40 +84,29 @@ const getReportData = async (req, res) => {
       });
     }
 
-    // Reuse the same query logic as export service
-    const query = `
-      SELECT 
-        nt.requestid AS RequestID,
-        pn.ProjectName,
-        emp.emp_name AS EmployeeName,
-        ac.status AS CourseStatus,
-        DATE_FORMAT(ac.assigned_date, '%Y-%m-%d') AS AssignedDate,
-        ac.progress AS Progress,
-        ct.type_name AS CourseType
-      FROM newtrainingrequest nt
-      JOIN assigned_courses ac ON nt.requestid = ac.requestid
-      JOIN employee emp ON ac.employee_id = emp.emp_id
-      JOIN course_type ct ON ac.coursetype_id = ct.type_id
-      JOIN projectname pn ON nt.projectid = pn.projectid
-      WHERE DATE(ac.assigned_date) BETWEEN ? AND ?
-      ${status && status !== 'all' ? `AND ac.status = '${status}'` : ''}
-      ORDER BY ac.assigned_date DESC;
-    `;
+    // Get data from service
+    excelExportService.getReportData(fromDate, toDate, status || 'all', (err, results) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to fetch report data',
+          details: err.message
+        });
+      }
 
-    // Execute query
-    const [results] = await connection.promise().query(query, [fromDate, toDate]);
-    
-    res.json({
-      success: true,
-      count: results.length,
-      data: results
+      res.json({
+        success: true,
+        count: results.length,
+        data: results
+      });
     });
 
   } catch (error) {
-    console.error('Database error:', error);
+    console.error('Controller error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch report data',
+      error: 'Internal server error',
       details: error.message
     });
   }
