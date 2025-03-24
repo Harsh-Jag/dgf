@@ -1,0 +1,64 @@
+/* Custom styles for smaller calendar */
+.small-calendar .MuiPickersCalendarHeader-root {
+    padding: 4px 8px;
+    margin: 0;
+  }
+  
+  .small-calendar .MuiPickersCalendarHeader-label {
+    font-size: 0.85rem;
+  }
+  
+  .small-calendar .MuiPickersCalendarHeader-switchViewButton {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .small-calendar .MuiPickersArrowSwitcher-button {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+  }
+  
+  .small-calendar .MuiDayCalendar-weekDayLabel {
+    font-size: 0.7rem;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+  }
+  
+  .small-calendar .MuiPickersDay-root {
+    font-size: 0.75rem;
+    width: 28px;
+    height: 28px;
+    margin: 1px;
+  }
+  
+  .small-calendar .MuiPickersDay-today {
+    border-width: 1px;
+  }
+  
+  .small-calendar .MuiPickersCalendarHeader-switchViewIcon {
+    font-size: 1rem;
+  }
+  
+  .small-calendar .MuiPickersArrowSwitcher-button svg {
+    font-size: 1rem;
+  }
+  
+  .small-calendar .MuiPickersCalendarHeader-root {
+    min-height: 32px;
+  }
+  
+  .small-calendar .MuiDayCalendar-header {
+    justify-content: space-around;
+  }
+  
+  .small-calendar .MuiDayCalendar-weekContainer {
+    justify-content: space-around;
+  }
+  
+  .small-calendar .MuiPickersSlideTransition-root {
+    min-height: 180px;
+  }
+  
+  
