@@ -1,0 +1,70 @@
+/* src/components/Header.css */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap");
+
+body {
+  background-color: #f2f3f7f7 !important;
+  /* overflow: hidden; */
+  overflow-y: auto;
+  font-family: "Poppins", sans-serif !important;
+  font-weight: regular !important;
+}
+.header {
+  /* margin-top: -8px; */
+  height: 70px !important;
+  background-color: white !important;
+  color: #a8a8a8 !important;
+  box-shadow: 0px 3px 6px #00000029 !important;
+  border-radius: 0px;
+  /* margin-right: 40px; */
+  /* margin-left: 214px; */
+  padding: 16px !important;
+  /* padding-left: 10px; */
+  font-family: "Poppins", sans-serif !important;
+  width: calc(100%) !important; /* Adjust width to account for sidebar */
+}
+
+.header .MuiTypography-h6 {
+  font-family: "Poppins", sans-serif !important;
+  letter-spacing: 0.5px;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  width: 30%;
+  /* background-color: rgba(230, 224, 245, 0.463) !important; */
+  height: auto;
+  box-shadow: none;
+  font-family: "Poppins", sans-serif !important;
+  padding: 5px 10px;
+  margin-left: -30px;
+}
+
+.search-input {
+  margin-left: 10px;
+  text-decoration-color: #616161;
+  flex: 1;
+  font-size: 17px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.16);
+  font-family: "Poppins", sans-serif !important;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  padding-bottom: 22px;
+  cursor: pointer;
+}
+.profile .MuiAvatar-root {
+  width: 30px !important; /* Increase the avatar size */
+  height: 30px !important; /* Increase the avatar size */
+}
+.btn {
+  color: #616161;
+}
+
+.icon {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.16);
+}
+
